@@ -8,9 +8,7 @@
     <a href="https://li0ard.is-cool.dev/widevine">docs</a>
     <br><br>
     <a href="https://github.com/li0ard/widevine/blob/main/LICENSE"><img src="https://img.shields.io/github/license/li0ard/widevine" /></a>
-    <br>
-    <a href="https://npmjs.com/package/@li0ard/widevine"><img src="https://img.shields.io/npm/v/@li0ard/widevine" /></a>
-    <a href="https://jsr.io/@li0ard/widevine"><img src="https://jsr.io/badges/@li0ard/widevine" /></a>
+    <a href="https://npmjs.com/package/@li0ard/widevine"><img src="https://img.shields.io/npm/v/@li0ard/widevine" />
     <br>
     <hr>
 </p>
