@@ -1,0 +1,44 @@
+{
+  "name": "@li0ard/widevine",
+  "version": "0.1.1",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "type": "module",
+  "author": "li0ard",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/li0ard/widevine.git"
+  },
+  "bugs": {
+    "url": "https://github.com/li0ard/widevine/issues"
+  },
+  "homepage": "https://github.com/li0ard/widevine#readme",
+  "description": "Widevine CDM implementation in pure TypeScript",
+  "license": "MIT",
+  "scripts": {
+    "build": "rm -rf dist/ && tsc --project tsconfig.build.json",
+    "docs": "typedoc --options .config/typedoc/config.cjs"
+  },
+  "devDependencies": {
+    "@types/bun": "latest",
+    "@types/google-protobuf": "^3.15.12",
+    "protoc-gen-ts": "^0.8.7",
+    "typedoc": "^0.28.16"
+  },
+  "peerDependencies": {
+    "typescript": "^5.0.0"
+  },
+  "dependencies": {
+    "@noble/ciphers": "^2.1.1",
+    "@noble/hashes": "^2.0.1",
+    "@peculiar/asn1-rsa": "^2.6.0",
+    "@peculiar/asn1-schema": "^2.6.0",
+    "google-protobuf": "^4.0.1",
+    "micro-rsa-dsa-dh": "^0.2.3"
+  },
+  "files": ["dist"],
+  "publishConfig": {
+    "access": "public"
+  },
+  "keywords": ["cdm", "widevine", "google"]
+}
