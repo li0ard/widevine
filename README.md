@@ -39,13 +39,13 @@ const sessionId = cdm.open();
 
 const pssh = PSSH.decode(Buffer.from("....", "base64"));
 
-const challenge = cdm.get_license_challenge(sessionId, pssh);
+const challenge = cdm.getLicenseChallenge(sessionId, pssh);
 const license = await (await fetch(`https://cwip-shaka-proxy.appspot.com/no_auth`, {
     method: "POST",
     body: challenge
 })).arrayBuffer();
 
-for(const key of cdm.parse_license(sessionId, new Uint8Array(license)))
+for(const key of cdm.parseLicense(sessionId, new Uint8Array(license)))
     console.log(`- [${KeyType[key.type]}] ${bytesToHex(key.kid)}:${bytesToHex(key.key)}`);
 
 cdm.close(sessionId);

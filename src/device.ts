@@ -8,18 +8,18 @@ export class Device {
     /**
      * Device instance for CDM
      * @param type Device type
+     * @param clientId Device client identification
      * @param privateKey Device private key
-     * @param client_id Device client identification
      */
     constructor(
         public type: DeviceType,
+        public clientId: pywidevine_license_protocol.ClientIdentification,
         public privateKey: PrivateKey,
-        public client_id: pywidevine_license_protocol.ClientIdentification,
     ) {}
 
     /** Device public key */
     get publicKey(): PublicKey {
-        const certificate = parseCerificate(this.client_id.token);
+        const certificate = parseCerificate(this.clientId.token);
         if(!certificate.public_key) throw new Error("Missing public key in DRM certificate");
 
         return decodePublicKey(certificate.public_key);
@@ -28,13 +28,13 @@ export class Device {
     /**
      * Get device instance from dump
      * @param type Device type
-     * @param client_id Device client identification blob (`client_id.bin`)
+     * @param clientId Device client identification blob (`client_id.bin`)
      * @param privateKey Device private key blob (ASN.1 encoded)
      */
-    static decode(type: DeviceType, client_id: Uint8Array, privateKey: Uint8Array): Device {
-        const clientId = pywidevine_license_protocol.ClientIdentification.deserialize(client_id);
-        if(!clientId.token) throw new Error("Missing token in Client ID");
+    static decode(type: DeviceType, clientId: Uint8Array, privateKey: Uint8Array): Device {
+        const client_id = pywidevine_license_protocol.ClientIdentification.deserialize(clientId);
+        if(!client_id.token) throw new Error("Missing token in Client ID");
 
-        return new Device(type, decodePrivateKey(privateKey), clientId);
+        return new Device(type, client_id, decodePrivateKey(privateKey));
     }
 }

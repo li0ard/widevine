@@ -1,17 +1,17 @@
 import { bytesToHex, concatBytes, equalBytes, numberToBytesBE, randomBytes } from "@noble/ciphers/utils.js";
 import type { Device } from "./device.js";
 import type { PSSH } from "./pssh.js";
-import { DeviceType } from "./const.js";
+import { DeviceType, ROOT_CERT } from "./const.js";
 import { Session } from "./session.js";
 import { PSS, OAEP, mgf1, type Signer, type KEM } from 'micro-rsa-dsa-dh/rsa.js';
 import { sha1 } from "@noble/hashes/legacy.js";
 import { pywidevine_license_protocol } from "./protos/license_protocol.js";
 import { hmac } from "@noble/hashes/hmac.js";
 import { sha256 } from "@noble/hashes/sha2.js";
-import { cmac } from "@noble/ciphers/aes.js";
+import { cbc, cmac } from "@noble/ciphers/aes.js";
 import { Key } from "./key.js";
+import { decodePublicKey } from "./utils.js";
 
-const { LicenseType, LicenseRequest, ProtocolVersion, SignedMessage, License } = pywidevine_license_protocol;
 const ENCRYPTION_LABEL = new Uint8Array([0x45, 0x4e, 0x43, 0x52, 0x59, 0x50, 0x54, 0x49, 0x4f, 0x4e, 0x00]); // ENCRYPTION + \x00
 const ENCRYPTION_SIZE = new Uint8Array([0,0,0,0x80]); // 128
 const AUTHENTICATION_LABEL = new Uint8Array([0x41, 0x55, 0x54, 0x48, 0x45, 0x4e, 0x54, 0x49, 0x43, 0x41, 0x54, 0x49, 0x4f, 0x4e, 0x00]); // AUTHENTICATION + \x00
@@ -19,6 +19,7 @@ const AUTHENTICATION_SIZE = new Uint8Array([0,0,2,0]); // 512
 
 /** Widevine Content Decryption Module (CDM) instance */
 export class CDM {
+    static MAX_SESSIONS = 16;
     private sessions = new Map<string, Session>();
 
     private signer: Signer;
@@ -35,6 +36,7 @@ export class CDM {
 
     /** Open session */
     public open(): string {
+        if(this.sessions.size > CDM.MAX_SESSIONS) throw new Error("Too many sessions");
         const session = new Session(this.sessions.size + 1);
         const id = bytesToHex(session.id);
         this.sessions.set(id, session);
@@ -56,9 +58,10 @@ export class CDM {
      * Get license request (challenge)
      * @param sessionId Session ID 
      * @param pssh PSSH object
-     * @param license_type License type (default - `STREAMING`)
+     * @param licenseType License type (default - `STREAMING`)
+     * @param privacyMode Encrypt the Client ID using service certificate (If service certificate is set)
      */
-    public get_license_challenge(sessionId: string, pssh: PSSH, license_type = LicenseType.STREAMING): Uint8Array {
+    public getLicenseChallenge(sessionId: string, pssh: PSSH, licenseType = pywidevine_license_protocol.LicenseType.STREAMING, privacyMode = true): Uint8Array {
         const session = this.sessions.get(sessionId);
         if(!session) throw new Error("Session identifier is invalid");
 
@@ -70,51 +73,109 @@ export class CDM {
         )).toUpperCase());
         else request_id = randomBytes(16);
         
-        const wvdPsshData = new LicenseRequest.ContentIdentification.WidevinePsshData();
-        wvdPsshData.pssh_data = [pssh.init_data];
-        wvdPsshData.license_type = license_type;
+        const wvdPsshData = new pywidevine_license_protocol.LicenseRequest.ContentIdentification.WidevinePsshData();
+        wvdPsshData.pssh_data = [pssh.initData];
+        wvdPsshData.license_type = licenseType;
         wvdPsshData.request_id = request_id;
 
-        const contentId = new LicenseRequest.ContentIdentification()
+        const contentId = new pywidevine_license_protocol.LicenseRequest.ContentIdentification()
         contentId.widevine_pssh_data = wvdPsshData;
 
-        const licenseRequest = new LicenseRequest();
-        licenseRequest.client_id = this.device.client_id;
+        const licenseRequest = new pywidevine_license_protocol.LicenseRequest();
+        if(!(session.serviceCertificate && privacyMode)) licenseRequest.client_id = this.device.clientId;
+        if(session.serviceCertificate && privacyMode) licenseRequest.encrypted_client_id = this.encryptClientId(this.device.clientId, session.serviceCertificate);
         licenseRequest.content_id = contentId;
-        licenseRequest.type = LicenseRequest.RequestType.NEW;
+        licenseRequest.type = pywidevine_license_protocol.LicenseRequest.RequestType.NEW;
         licenseRequest.request_time = Math.round(Date.now() / 1000);
-        licenseRequest.protocol_version = ProtocolVersion.VERSION_2_1;
+        licenseRequest.protocol_version = pywidevine_license_protocol.ProtocolVersion.VERSION_2_1;
         licenseRequest.key_control_nonce = Math.floor(Math.random() * 2000000) + 1;
 
         const licenseRequestSerialized = licenseRequest.serializeBinary();
 
-        const signedLicenseRequest = new SignedMessage();
-        signedLicenseRequest.type = SignedMessage.MessageType.LICENSE_REQUEST;
+        const signedLicenseRequest = new pywidevine_license_protocol.SignedMessage();
+        signedLicenseRequest.type = pywidevine_license_protocol.SignedMessage.MessageType.LICENSE_REQUEST;
         signedLicenseRequest.msg = licenseRequestSerialized;
         signedLicenseRequest.signature = this.signer.sign(this.device.privateKey, licenseRequestSerialized)
 
-        session.context.set(bytesToHex(request_id), this.derive_context(licenseRequestSerialized))
+        session.context.set(bytesToHex(request_id), this.deriveContext(licenseRequestSerialized))
         return signedLicenseRequest.serializeBinary();
+    }
+
+    /**
+     * Set service certificate for privacy mode
+     * @param sessionId Session ID
+     * @param certificate Service certificate (If none remove current)
+     */
+    public setServiceCertificate(sessionId: string, certificate?: Uint8Array): string | null {
+        const session = this.sessions.get(sessionId);
+        if(!session) throw new Error("Session identifier is invalid");
+
+        let providerId: string | null;
+        if(!certificate) {
+            if(session.serviceCertificate) {
+                const drmCertificate = pywidevine_license_protocol.DrmCertificate.deserializeBinary(session.serviceCertificate.drm_certificate);
+                providerId = drmCertificate.provider_id;
+            }
+            else providerId = null;
+
+            session.serviceCertificate = undefined;
+
+            return providerId
+        }
+
+        let signedDrmCertificate: pywidevine_license_protocol.SignedDrmCertificate;
+        try {
+            const signedMessage = pywidevine_license_protocol.SignedMessage.deserialize(certificate);
+            
+            signedDrmCertificate = pywidevine_license_protocol.SignedDrmCertificate.deserialize(signedMessage.msg);
+            if(signedDrmCertificate.drm_certificate.length == 0) throw new Error("");
+        } catch(e) {
+            signedDrmCertificate = pywidevine_license_protocol.SignedDrmCertificate.deserialize(certificate);
+        }
+
+        if(!signedDrmCertificate.drm_certificate) throw new Error("Can't decode DRM certificate");
+
+        if(!this.signer.verify(
+            decodePublicKey(ROOT_CERT.public_key),
+            signedDrmCertificate.drm_certificate,
+            signedDrmCertificate.signature
+        )) throw new Error("Signature mismatch");
+
+        const drmCertificate = pywidevine_license_protocol.DrmCertificate.deserializeBinary(signedDrmCertificate.drm_certificate);
+        session.serviceCertificate = signedDrmCertificate;
+
+        return drmCertificate.provider_id;
+    }
+
+    /**
+     * Get service certificate of session
+     * @param sessionId Session ID
+     */
+    public getServiceCertificate(sessionId: string): pywidevine_license_protocol.SignedDrmCertificate | null {
+        const session = this.sessions.get(sessionId);
+        if(!session) throw new Error("Session identifier is invalid");
+
+        return session.serviceCertificate ?? null;
     }
 
     /**
      * Get keys from license response
      * @param sessionId Session ID
-     * @param license_response License response
+     * @param licenseResponse License response
      */
-    public parse_license(sessionId: string, license_response: Uint8Array): Key[] {
+    public parseLicense(sessionId: string, licenseResponse: Uint8Array): Key[] {
         const session = this.sessions.get(sessionId);
         if(!session) throw new Error("Session identifier is invalid");
 
-        const license_message = SignedMessage.deserializeBinary(license_response);
-        if(license_message.type != SignedMessage.MessageType.LICENSE) throw new Error("Invalid message type");
+        const license_message = pywidevine_license_protocol.SignedMessage.deserializeBinary(licenseResponse);
+        if(license_message.type != pywidevine_license_protocol.SignedMessage.MessageType.LICENSE) throw new Error("Invalid message type");
 
-        const license = License.deserializeBinary(license_message.msg);
+        const license = pywidevine_license_protocol.License.deserializeBinary(license_message.msg);
         
         const context = session.context.get(bytesToHex(license.id.request_id));
         if(!context) throw new Error("Cannot parse a license message without first making a license request");
 
-        const [enc_key, mac_key_server, _] = this.derive_keys(
+        const [enc_key, mac_key_server, _] = this.deriveKeys(
             context[0], context[1],
             this.crypter.decrypt(this.device.privateKey, license_message.session_key)
         );
@@ -134,18 +195,39 @@ export class CDM {
         return session.keys;
     }
 
-    private derive_keys(enc_context: Uint8Array, mac_context: Uint8Array, key: Uint8Array): Uint8Array[] {
+    private encryptClientId(
+        clientId: pywidevine_license_protocol.ClientIdentification,
+        serviceCertificate: pywidevine_license_protocol.SignedDrmCertificate,
+        key?: Uint8Array,
+        iv?: Uint8Array
+    ): pywidevine_license_protocol.EncryptedClientIdentification {
+        const privacy_key = key ?? randomBytes(16),
+            privacy_iv = iv ?? randomBytes(16);
+
+        const drmCertificate = pywidevine_license_protocol.DrmCertificate.deserializeBinary(serviceCertificate.drm_certificate);
+        const encryptClientIdentification = new pywidevine_license_protocol.EncryptedClientIdentification();
+
+        encryptClientIdentification.provider_id = drmCertificate.provider_id;
+        encryptClientIdentification.service_certificate_serial_number = drmCertificate.serial_number;
+        encryptClientIdentification.encrypted_client_id = cbc(privacy_key, privacy_iv).encrypt(clientId.serializeBinary());
+        encryptClientIdentification.encrypted_client_id_iv = privacy_iv;
+        encryptClientIdentification.encrypted_privacy_key = this.crypter.encrypt(decodePublicKey(drmCertificate.public_key), privacy_key);
+
+        return encryptClientIdentification;
+    }
+
+    private deriveKeys(encContext: Uint8Array, macContext: Uint8Array, key: Uint8Array): Uint8Array[] {
         const _derive = (session_key: Uint8Array, context: Uint8Array, counter: number) =>
             cmac(session_key, concatBytes(numberToBytesBE(counter, 1), context));
 
-        const enc_key = _derive(key, enc_context, 1);
-        const mac_key_server = concatBytes(_derive(key, mac_context, 1), _derive(key, mac_context, 2));
-        const mac_key_client = concatBytes(_derive(key, mac_context, 3), _derive(key, mac_context, 4));
+        const enc_key = _derive(key, encContext, 1);
+        const mac_key_server = concatBytes(_derive(key, macContext, 1), _derive(key, macContext, 2));
+        const mac_key_client = concatBytes(_derive(key, macContext, 3), _derive(key, macContext, 4));
 
         return [enc_key, mac_key_server, mac_key_client];
     }
 
-    private derive_context(message: Uint8Array): Uint8Array[] {
+    private deriveContext(message: Uint8Array): Uint8Array[] {
         return [
             concatBytes(ENCRYPTION_LABEL, message, ENCRYPTION_SIZE),
             concatBytes(AUTHENTICATION_LABEL, message, AUTHENTICATION_SIZE)
@@ -153,7 +235,7 @@ export class CDM {
     }
 }
 
-export { WIDEVINE_SID, KeyType, DeviceType} from "./const.js";
+export { KeyType, DeviceType, LicenseType, SERVICE_CERTIFICATE_CHALLENGE } from "./const.js";
 export { Device } from "./device.js";
 export { Key } from "./key.js";
-export { PSSH } from "./pssh.js";
+export { SystemID, PSSH } from "./pssh.js";

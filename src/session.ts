@@ -4,7 +4,7 @@ import type { Key } from "./key.js";
 
 export class Session {
     public id: Uint8Array;
-    public servicCertificate?: pywidevine_license_protocol.SignedDrmCertificate;
+    public serviceCertificate?: pywidevine_license_protocol.SignedDrmCertificate;
     public context = new Map<string, Uint8Array[]>();
     public keys: Key[] = [];
     constructor(public number: number) {
