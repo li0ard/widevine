@@ -37,4 +37,40 @@ export class Device {
 
         return new Device(type, client_id, decodePrivateKey(privateKey));
     }
+
+    /** Get device instance from `.wvd` file */
+    static fromWvd(data: Uint8Array): Device {
+        const rdr = new DataView(data.buffer);
+
+        let offset = 0;
+        const magic = new TextDecoder().decode(data.subarray(offset, offset += 3));
+        if(magic != "WVD") throw new Error("Invalid magic constant, not a WVD file");
+
+        const version = rdr.getUint8(offset);
+        offset += 1;
+        if(version != 1 && version != 2) throw new Error("Invalid version, not a WVD file");
+
+        const type = rdr.getUint8(offset);
+        offset += 1;
+
+        const level = rdr.getUint8(offset);
+        offset += 1;
+        if(level < 1 || level > 3) throw new Error("Invalid device version, not a WVD file");
+
+        //const flags = rdr.getUint8(offset);
+        offset += 1;
+
+        const privateKeyLength = rdr.getUint16(offset);
+        offset += 2;
+
+        const privateKey = data.slice(offset, offset += privateKeyLength);
+        
+        const clientIdLen = rdr.getUint16(offset);
+        offset += 2;
+
+        const clientId = pywidevine_license_protocol.ClientIdentification.deserializeBinary(data.slice(offset, offset += clientIdLen));
+        if(!clientId.token) throw new Error("Missing token in Client ID, not a WVD file");
+
+        return new Device(type, clientId, decodePrivateKey(privateKey));
+    }
 }
