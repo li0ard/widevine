@@ -13,6 +13,16 @@
     <hr>
 </p>
 
+> [!CAUTION]
+> - **Project doesn't provide private key and Client ID for any purposes**
+> - **Project doesn't condone piracy or any action against the terms of the DRM systems.**
+> - **Project is for study and research only. Please don't use it for commercial purposes**
+
+## Features
+- Support privacy mode with Service certificates
+- Support `.wvd` deserialization
+- Strictly typed API
+
 ## Installation
 
 ```bash
@@ -32,7 +42,7 @@ const device = Device.decode(
     DeviceType.ANDROID,
     Buffer.from("....", "base64"),
     Buffer.from("....", "base64")
-);
+) // Device.fromWvd(....);
 
 const cdm = new CDM(device);
 const sessionId = cdm.open();
