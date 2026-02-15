@@ -1,33 +1,30 @@
-import { bytesToHex, concatBytes, equalBytes, numberToBytesBE, randomBytes } from "@noble/ciphers/utils.js";
-import type { Device } from "./device.js";
-import type { PSSH } from "./pssh.js";
 import { DeviceType, ROOT_CERT_PUBLIC, ENCRYPTION_LABEL, ENCRYPTION_SIZE, AUTHENTICATION_LABEL, AUTHENTICATION_SIZE } from "./const.js";
-import { Session } from "./session.js";
-import { PSS, OAEP, mgf1, type Signer, type KEM } from 'micro-rsa-dsa-dh/rsa.js';
-import { sha1 } from "@noble/hashes/legacy.js";
 import { pywidevine_license_protocol } from "./protos/license_protocol.js";
+import { PSS, OAEP, mgf1 } from 'micro-rsa-dsa-dh/rsa.js';
+import { sha1 } from "@noble/hashes/legacy.js";
 import { hmac } from "@noble/hashes/hmac.js";
 import { sha256 } from "@noble/hashes/sha2.js";
 import { cbc, cmac } from "@noble/ciphers/aes.js";
+import type { Device } from "./device.js";
 import { Key } from "./key.js";
+import type { PSSH } from "@li0ard/pssh";
+import { Session } from "./session.js";
+import { bytesToHex, concatBytes, equalBytes, numberToBytesBE, randomBytes } from "@noble/ciphers/utils.js";
 import { decodePublicKey } from "./utils.js";
+
+const signer = PSS(sha1, mgf1(sha1), 20);
+const crypter = OAEP(sha1, mgf1(sha1));
 
 /** Widevine Content Decryption Module (CDM) instance */
 export class CDM {
     static MAX_SESSIONS = 16;
     private sessions = new Map<string, Session>();
 
-    private signer: Signer;
-    private crypter: KEM;
-
     /**
      * Widevine Content Decryption Module (CDM) instance
      * @param device Device instance
      */
-    constructor(public device: Device) {
-        this.signer = PSS(sha1, mgf1(sha1), 20);
-        this.crypter = OAEP(sha1, mgf1(sha1));
-    }
+    constructor(public device: Device) {}
 
     /** Open session */
     public open(): string {
@@ -68,7 +65,7 @@ export class CDM {
         else request_id = randomBytes(16);
         
         const wvdPsshData = new pywidevine_license_protocol.LicenseRequest.ContentIdentification.WidevinePsshData();
-        wvdPsshData.pssh_data = [pssh.initData];
+        wvdPsshData.pssh_data = [pssh.init_data];
         wvdPsshData.license_type = licenseType;
         wvdPsshData.request_id = request_id;
 
@@ -89,7 +86,7 @@ export class CDM {
         const signedLicenseRequest = new pywidevine_license_protocol.SignedMessage();
         signedLicenseRequest.type = pywidevine_license_protocol.SignedMessage.MessageType.LICENSE_REQUEST;
         signedLicenseRequest.msg = licenseRequestSerialized;
-        signedLicenseRequest.signature = this.signer.sign(this.device.privateKey, licenseRequestSerialized);
+        signedLicenseRequest.signature = signer.sign(this.device.privateKey, licenseRequestSerialized);
 
         session.context.set(bytesToHex(request_id), CDM.deriveContext(licenseRequestSerialized));
         return signedLicenseRequest.serializeBinary();
@@ -128,7 +125,7 @@ export class CDM {
         }
 
         if(!signedDrmCertificate.drm_certificate) throw new Error("Can't decode DRM certificate");
-        if(!this.signer.verify(ROOT_CERT_PUBLIC, signedDrmCertificate.drm_certificate, signedDrmCertificate.signature)) throw new Error("Signature mismatch");
+        if(!signer.verify(ROOT_CERT_PUBLIC, signedDrmCertificate.drm_certificate, signedDrmCertificate.signature)) throw new Error("Signature mismatch");
 
         const drmCertificate = pywidevine_license_protocol.DrmCertificate.deserializeBinary(signedDrmCertificate.drm_certificate);
         session.serviceCertificate = signedDrmCertificate;
@@ -166,7 +163,7 @@ export class CDM {
 
         const [enc_key, mac_key_server] = CDM.deriveKeys(
             context[0], context[1],
-            this.crypter.decrypt(this.device.privateKey, license_message.session_key)
+            crypter.decrypt(this.device.privateKey, license_message.session_key)
         );
 
         const computed_signature = hmac(
@@ -200,7 +197,7 @@ export class CDM {
         encryptClientIdentification.service_certificate_serial_number = drmCertificate.serial_number;
         encryptClientIdentification.encrypted_client_id = cbc(privacy_key, privacy_iv).encrypt(clientId.serializeBinary());
         encryptClientIdentification.encrypted_client_id_iv = privacy_iv;
-        encryptClientIdentification.encrypted_privacy_key = OAEP(sha1, mgf1(sha1)).encrypt(decodePublicKey(drmCertificate.public_key), privacy_key);
+        encryptClientIdentification.encrypted_privacy_key = crypter.encrypt(decodePublicKey(drmCertificate.public_key), privacy_key);
 
         return encryptClientIdentification;
     }
@@ -229,4 +226,4 @@ export class CDM {
 export { KeyType, DeviceType, LicenseType, SERVICE_CERTIFICATE_CHALLENGE } from "./const.js";
 export { Device } from "./device.js";
 export { Key } from "./key.js";
-export { PSSH } from "./pssh.js";
+export { PSSH } from "@li0ard/pssh";

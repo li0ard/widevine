@@ -1,6 +1,4 @@
-import { hexToBytes } from "@noble/ciphers/utils.js";
 import { pywidevine_license_protocol } from "./protos/license_protocol.js";
-import { parseCerificate } from "./utils.js";
 
 /** Device type */
 export enum DeviceType {
@@ -20,7 +18,7 @@ export const ROOT_CERT_PUBLIC = {
 /** Challenge to get service certificate */
 export const SERVICE_CERTIFICATE_CHALLENGE: Readonly<Uint8Array> = new Uint8Array([8,4]);
 
-export const ENCRYPTION_LABEL = new Uint8Array([0x45, 0x4e, 0x43, 0x52, 0x59, 0x50, 0x54, 0x49, 0x4f, 0x4e, 0x00]); // ENCRYPTION + \x00
-export const ENCRYPTION_SIZE = new Uint8Array([0,0,0,0x80]); // 128
-export const AUTHENTICATION_LABEL = new Uint8Array([0x41, 0x55, 0x54, 0x48, 0x45, 0x4e, 0x54, 0x49, 0x43, 0x41, 0x54, 0x49, 0x4f, 0x4e, 0x00]); // AUTHENTICATION + \x00
-export const AUTHENTICATION_SIZE = new Uint8Array([0,0,2,0]); // 512
+export const ENCRYPTION_LABEL: Readonly<Uint8Array> = new Uint8Array([0x45, 0x4e, 0x43, 0x52, 0x59, 0x50, 0x54, 0x49, 0x4f, 0x4e, 0x00]); // ENCRYPTION + \x00
+export const ENCRYPTION_SIZE: Readonly<Uint8Array> = new Uint8Array([0,0,0,0x80]); // 128
+export const AUTHENTICATION_LABEL: Readonly<Uint8Array> = new Uint8Array([0x41, 0x55, 0x54, 0x48, 0x45, 0x4e, 0x54, 0x49, 0x43, 0x41, 0x54, 0x49, 0x4f, 0x4e, 0x00]); // AUTHENTICATION + \x00
+export const AUTHENTICATION_SIZE: Readonly<Uint8Array> = new Uint8Array([0,0,2,0]); // 512
