@@ -15,7 +15,7 @@
 
 > [!CAUTION]
 > - **Project doesn't provide private key and Client ID for any purposes**
-> - **Project doesn't condone piracy or any action against the terms of the DRM systems.**
+> - **Project doesn't condone piracy or any action against the terms of the DRM systems**
 > - **Project is for study and research only. Please don't use it for commercial purposes**
 
 ## Features
@@ -26,11 +26,7 @@
 ## Installation
 
 ```bash
-# from NPM
 npm i @li0ard/widevine
-
-# from JSR
-bunx jsr add @li0ard/widevine 
 ```
 
 ## Example
