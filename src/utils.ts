@@ -4,7 +4,7 @@ import { RSAPrivateKey, RSAPublicKey } from "@peculiar/asn1-rsa";
 import type { PublicKey, PrivateKey } from 'micro-rsa-dsa-dh/rsa.js';
 import { bytesToNumberBE } from "@noble/ciphers/utils.js";
 
-export const parseCerificate = (certificate: Uint8Array): DrmCertificate => {
+export const parseCertificate = (certificate: Uint8Array): DrmCertificate => {
     let signedDrmCertificate;
     try {
         const signedMessage = SignedMessage.deserialize(certificate);

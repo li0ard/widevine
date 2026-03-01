@@ -1,6 +1,6 @@
 import type { PublicKey, PrivateKey } from 'micro-rsa-dsa-dh/rsa.js';
 import { ClientIdentification } from "@li0ard/widevineproto"
-import { decodePrivateKey, decodePublicKey, parseCerificate } from './utils.js';
+import { decodePrivateKey, decodePublicKey, parseCertificate } from './utils.js';
 import type { DeviceType } from './const.js';
 
 /** Device instance for CDM */
@@ -19,7 +19,7 @@ export class Device {
 
     /** Device public key */
     get publicKey(): PublicKey {
-        const certificate = parseCerificate(this.clientId.token);
+        const certificate = parseCertificate(this.clientId.token);
         if(!certificate.public_key) throw new Error("Missing public key in DRM certificate");
 
         return decodePublicKey(certificate.public_key);
