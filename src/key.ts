@@ -1,5 +1,5 @@
 import { cbc } from "@noble/ciphers/aes.js";
-import { pywidevine_license_protocol } from "./protos/license_protocol.js";
+import type { LicenseKeyContainerKeyType, LicenseKeyContainer } from "@li0ard/widevineproto";
 import { bytesToNumberBE } from "@noble/ciphers/utils.js";
 
 /** Key control block instance */
@@ -40,7 +40,7 @@ export class Key {
      * @param key Key
      */
     constructor(
-        public type: pywidevine_license_protocol.License.KeyContainer.KeyType,
+        public type: LicenseKeyContainerKeyType,
         public kid: Uint8Array,
         public key: Uint8Array
     ) {}
@@ -50,7 +50,7 @@ export class Key {
      * @param container Key container
      * @param encKey Decryption key
      */
-    static fromContainer(container: pywidevine_license_protocol.License.KeyContainer, encKey: Uint8Array): Key {
+    static fromContainer(container: LicenseKeyContainer, encKey: Uint8Array): Key {
         const decryptedKey = cbc(encKey, container.iv).decrypt(container.key);
 
         const keyClass = new Key(container.type, container.id, decryptedKey);

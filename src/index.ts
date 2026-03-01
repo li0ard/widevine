@@ -1,5 +1,4 @@
 import { DeviceType, ROOT_CERT_PUBLIC, ENCRYPTION_LABEL, ENCRYPTION_SIZE, AUTHENTICATION_LABEL, AUTHENTICATION_SIZE } from "./const.js";
-import { pywidevine_license_protocol } from "./protos/license_protocol.js";
 import { PSS, OAEP, mgf1 } from 'micro-rsa-dsa-dh/rsa.js';
 import { sha1 } from "@noble/hashes/legacy.js";
 import { hmac } from "@noble/hashes/hmac.js";
@@ -11,6 +10,7 @@ import type { PSSH } from "@li0ard/pssh";
 import { Session } from "./session.js";
 import { bytesToHex, concatBytes, equalBytes, numberToBytesBE, randomBytes } from "@noble/ciphers/utils.js";
 import { decodePublicKey } from "./utils.js";
+import { type ClientIdentification, DrmCertificate, EncryptedClientIdentification, License, LicenseRequest, LicenseRequestContentIdentification, LicenseRequestContentIdentificationWidevinePsshData, LicenseRequestRequestType, LicenseType, ProtocolVersion, SignedDrmCertificate, SignedMessage, SignedMessageMessageType } from "@li0ard/widevineproto";
 
 const signer = PSS(sha1, mgf1(sha1), 20);
 const crypter = OAEP(sha1, mgf1(sha1));
@@ -52,7 +52,7 @@ export class CDM {
      * @param licenseType License type (default - `STREAMING`)
      * @param privacyMode Encrypt the Client ID using service certificate (If service certificate is set)
      */
-    public getLicenseChallenge(sessionId: string, pssh: PSSH, licenseType = pywidevine_license_protocol.LicenseType.STREAMING, privacyMode = true): Uint8Array {
+    public getLicenseChallenge(sessionId: string, pssh: PSSH, licenseType = LicenseType.STREAMING, privacyMode = true): Uint8Array {
         const session = this.sessions.get(sessionId);
         if(!session) throw new Error("Session identifier is invalid");
 
@@ -64,27 +64,27 @@ export class CDM {
         )).toUpperCase());
         else request_id = randomBytes(16);
         
-        const wvdPsshData = new pywidevine_license_protocol.LicenseRequest.ContentIdentification.WidevinePsshData();
+        const wvdPsshData = new LicenseRequestContentIdentificationWidevinePsshData();
         wvdPsshData.pssh_data = [pssh.init_data];
         wvdPsshData.license_type = licenseType;
         wvdPsshData.request_id = request_id;
 
-        const contentId = new pywidevine_license_protocol.LicenseRequest.ContentIdentification();
+        const contentId = new LicenseRequestContentIdentification();
         contentId.widevine_pssh_data = wvdPsshData;
 
-        const licenseRequest = new pywidevine_license_protocol.LicenseRequest();
+        const licenseRequest = new LicenseRequest();
         if(session.serviceCertificate && privacyMode) licenseRequest.encrypted_client_id = CDM.encryptClientId(this.device.clientId, session.serviceCertificate);
         else licenseRequest.client_id = this.device.clientId;
         licenseRequest.content_id = contentId;
-        licenseRequest.type = pywidevine_license_protocol.LicenseRequest.RequestType.NEW;
+        licenseRequest.type = LicenseRequestRequestType.NEW;
         licenseRequest.request_time = Math.round(Date.now() / 1000);
-        licenseRequest.protocol_version = pywidevine_license_protocol.ProtocolVersion.VERSION_2_1;
+        licenseRequest.protocol_version = ProtocolVersion.VERSION_2_1;
         licenseRequest.key_control_nonce = Math.floor(Math.random() * 2000000) + 1;
 
         const licenseRequestSerialized = licenseRequest.serializeBinary();
 
-        const signedLicenseRequest = new pywidevine_license_protocol.SignedMessage();
-        signedLicenseRequest.type = pywidevine_license_protocol.SignedMessage.MessageType.LICENSE_REQUEST;
+        const signedLicenseRequest = new SignedMessage();
+        signedLicenseRequest.type = SignedMessageMessageType.LICENSE_REQUEST;
         signedLicenseRequest.msg = licenseRequestSerialized;
         signedLicenseRequest.signature = signer.sign(this.device.privateKey, licenseRequestSerialized);
 
@@ -104,7 +104,7 @@ export class CDM {
         let providerId: string | null;
         if(!certificate) {
             if(session.serviceCertificate) {
-                const drmCertificate = pywidevine_license_protocol.DrmCertificate.deserializeBinary(session.serviceCertificate.drm_certificate);
+                const drmCertificate = DrmCertificate.deserializeBinary(session.serviceCertificate.drm_certificate);
                 providerId = drmCertificate.provider_id;
             }
             else providerId = null;
@@ -114,20 +114,20 @@ export class CDM {
             return providerId;
         }
 
-        let signedDrmCertificate: pywidevine_license_protocol.SignedDrmCertificate;
+        let signedDrmCertificate: SignedDrmCertificate;
         try {
-            const signedMessage = pywidevine_license_protocol.SignedMessage.deserialize(certificate);
+            const signedMessage = SignedMessage.deserialize(certificate);
             
-            signedDrmCertificate = pywidevine_license_protocol.SignedDrmCertificate.deserialize(signedMessage.msg);
+            signedDrmCertificate = SignedDrmCertificate.deserialize(signedMessage.msg);
             if(signedDrmCertificate.drm_certificate.length == 0) throw new Error("");
         } catch(e) {
-            signedDrmCertificate = pywidevine_license_protocol.SignedDrmCertificate.deserialize(certificate);
+            signedDrmCertificate = SignedDrmCertificate.deserialize(certificate);
         }
 
         if(!signedDrmCertificate.drm_certificate) throw new Error("Can't decode DRM certificate");
         if(!signer.verify(ROOT_CERT_PUBLIC, signedDrmCertificate.drm_certificate, signedDrmCertificate.signature)) throw new Error("Signature mismatch");
 
-        const drmCertificate = pywidevine_license_protocol.DrmCertificate.deserializeBinary(signedDrmCertificate.drm_certificate);
+        const drmCertificate = DrmCertificate.deserializeBinary(signedDrmCertificate.drm_certificate);
         session.serviceCertificate = signedDrmCertificate;
 
         return drmCertificate.provider_id;
@@ -137,7 +137,7 @@ export class CDM {
      * Get service certificate of session
      * @param sessionId Session ID
      */
-    public getServiceCertificate(sessionId: string): pywidevine_license_protocol.SignedDrmCertificate | null {
+    public getServiceCertificate(sessionId: string): SignedDrmCertificate | null {
         const session = this.sessions.get(sessionId);
         if(!session) throw new Error("Session identifier is invalid");
 
@@ -153,10 +153,10 @@ export class CDM {
         const session = this.sessions.get(sessionId);
         if(!session) throw new Error("Session identifier is invalid");
 
-        const license_message = pywidevine_license_protocol.SignedMessage.deserializeBinary(licenseResponse);
-        if(license_message.type != pywidevine_license_protocol.SignedMessage.MessageType.LICENSE) throw new Error("Invalid message type");
+        const license_message = SignedMessage.deserializeBinary(licenseResponse);
+        if(license_message.type != SignedMessageMessageType.LICENSE) throw new Error("Invalid message type");
 
-        const license = pywidevine_license_protocol.License.deserializeBinary(license_message.msg);
+        const license = License.deserializeBinary(license_message.msg);
         
         const context = session.context.get(bytesToHex(license.id.request_id));
         if(!context) throw new Error("Cannot parse a license message without first making a license request");
@@ -183,15 +183,15 @@ export class CDM {
 
     /** Encrypt Client ID with Service certificate */
     static encryptClientId(
-        clientId: pywidevine_license_protocol.ClientIdentification,
-        serviceCertificate: pywidevine_license_protocol.SignedDrmCertificate,
+        clientId: ClientIdentification,
+        serviceCertificate: SignedDrmCertificate,
         key?: Uint8Array,
         iv?: Uint8Array
-    ): pywidevine_license_protocol.EncryptedClientIdentification {
+    ): EncryptedClientIdentification {
         const privacy_key = key ?? randomBytes(16), privacy_iv = iv ?? randomBytes(16);
 
-        const drmCertificate = pywidevine_license_protocol.DrmCertificate.deserializeBinary(serviceCertificate.drm_certificate);
-        const encryptClientIdentification = new pywidevine_license_protocol.EncryptedClientIdentification();
+        const drmCertificate = DrmCertificate.deserializeBinary(serviceCertificate.drm_certificate);
+        const encryptClientIdentification = new EncryptedClientIdentification();
 
         encryptClientIdentification.provider_id = drmCertificate.provider_id;
         encryptClientIdentification.service_certificate_serial_number = drmCertificate.serial_number;

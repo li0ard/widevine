@@ -1,5 +1,5 @@
 import type { PublicKey, PrivateKey } from 'micro-rsa-dsa-dh/rsa.js';
-import { pywidevine_license_protocol } from "./protos/license_protocol.js";
+import { ClientIdentification } from "@li0ard/widevineproto"
 import { decodePrivateKey, decodePublicKey, parseCerificate } from './utils.js';
 import type { DeviceType } from './const.js';
 
@@ -13,7 +13,7 @@ export class Device {
      */
     constructor(
         public type: DeviceType,
-        public clientId: pywidevine_license_protocol.ClientIdentification,
+        public clientId: ClientIdentification,
         public privateKey: PrivateKey,
     ) {}
 
@@ -32,7 +32,7 @@ export class Device {
      * @param privateKey Device private key blob (ASN.1 encoded)
      */
     static decode(type: DeviceType, clientId: Uint8Array, privateKey: Uint8Array): Device {
-        const client_id = pywidevine_license_protocol.ClientIdentification.deserialize(clientId);
+        const client_id = ClientIdentification.deserialize(clientId);
         if(!client_id.token) throw new Error("Missing token in Client ID");
 
         return new Device(type, client_id, decodePrivateKey(privateKey));
@@ -68,7 +68,7 @@ export class Device {
         const clientIdLen = rdr.getUint16(offset);
         offset += 2;
 
-        const clientId = pywidevine_license_protocol.ClientIdentification.deserializeBinary(data.slice(offset, offset += clientIdLen));
+        const clientId = ClientIdentification.deserializeBinary(data.slice(offset, offset += clientIdLen));
         if(!clientId.token) throw new Error("Missing token in Client ID, not a WVD file");
 
         return new Device(type, clientId, decodePrivateKey(privateKey));

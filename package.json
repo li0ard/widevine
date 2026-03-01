@@ -1,6 +1,6 @@
 {
   "name": "@li0ard/widevine",
-  "version": "0.1.5",
+  "version": "0.1.6",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
   "type": "module",
@@ -21,8 +21,6 @@
   },
   "devDependencies": {
     "@types/bun": "latest",
-    "@types/google-protobuf": "^3.15.12",
-    "protoc-gen-ts": "^0.8.7",
     "typedoc": "^0.28.16"
   },
   "peerDependencies": {
@@ -30,11 +28,11 @@
   },
   "dependencies": {
     "@li0ard/pssh": "^0.1.0",
+    "@li0ard/widevineproto": "^0.1.0",
     "@noble/ciphers": "^2.1.1",
     "@noble/hashes": "^2.0.1",
     "@peculiar/asn1-rsa": "^2.6.0",
     "@peculiar/asn1-schema": "^2.6.0",
-    "google-protobuf": "^4.0.1",
     "micro-rsa-dsa-dh": "^0.2.3"
   },
   "files": ["dist"],
